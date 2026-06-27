@@ -1,0 +1,46 @@
+name: Scrape 3FM Stream
+
+on:
+  schedule:
+    # Run every 24 hours at 1 AM UTC
+    - cron: '0 1 * * *'
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Run scraper
+        run: python scraper.py
+      
+      - name: Commit and push if changed
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          if [ -n "$(git status --porcelain)" ]; then
+            git add 3fmstream.txt
+            git commit -m "Update 3FM stream URL - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            git push
+            echo "✓ File updated and pushed"
+          else
+            echo "ℹ No changes detected - file is up to date"
+          fi
