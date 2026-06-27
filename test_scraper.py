@@ -1,42 +1,53 @@
 """
-3FM Stream Scraper - Test Version
+3FM Stream Scraper - Test Version with Selenium
 Scrapes .mpd stream URL from NPO 3FM and updates 3fmstream.txt immediately
+Waits for JavaScript to load the stream URL
 """
 
-import requests
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import re
+import time
 from datetime import datetime
 
 
 def scrape_3fm_mpd():
     """
-    Scrape the .mpd stream URL from NPO 3FM live page
+    Scrape the .mpd stream URL from NPO 3FM live page using Selenium
+    Waits for JavaScript to load the stream
     
     Returns:
         str: The .mpd URL if found, None otherwise
     """
+    driver = None
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+        print("Starting browser...")
+        options = webdriver.ChromeOptions()
+        options.add_argument('--start-maximized')
         
-        print("Fetching NPO 3FM page...")
-        response = requests.get('https://www.npo3fm.nl/live', headers=headers, timeout=10)
-        response.raise_for_status()
+        driver = webdriver.Chrome(options=options)
         
-        # Look for .mpd URL patterns in the page content
+        print("Loading NPO 3FM page...")
+        driver.get('https://www.npo3fm.nl/live')
+        
+        print("Waiting for page to load and JavaScript to render (10 seconds)...")
+        time.sleep(10)
+        
+        # Get the page content after JavaScript has loaded
+        page_content = driver.page_source
+        print(f"✓ Page loaded. Content length: {len(page_content)} characters")
+        
+        # Look for .mpd URL patterns
         mpd_patterns = [
             r'https?://[^\s"\'<>]+\.mpd',
             r'https?://[^\s"\'<>]+\.m3u8',
         ]
         
-        content = response.text
-        print(f"Page fetched successfully. Content length: {len(content)} characters")
-        
         for pattern in mpd_patterns:
-            matches = re.findall(pattern, content)
+            matches = re.findall(pattern, page_content)
             if matches:
-                # Return the first match (usually the main stream)
                 stream_url = matches[0]
                 print(f"✓ Found stream URL: {stream_url}")
                 return stream_url
@@ -44,17 +55,18 @@ def scrape_3fm_mpd():
         print("✗ No .mpd or .m3u8 URL found in page content")
         return None
         
-    except requests.RequestException as e:
-        print(f"✗ Error fetching page: {e}")
-        return None
     except Exception as e:
-        print(f"✗ Unexpected error during scraping: {e}")
+        print(f"✗ Error during scraping: {e}")
         return None
+    finally:
+        if driver:
+            print("Closing browser...")
+            driver.quit()
 
 
 def update_mpd_file(filepath, new_mpd):
     """
-    Update the 3fmstream.txt file with new .mpd URL and timestamp
+    Update the 3fmstream.txt file with new .mpd URL
     
     Args:
         filepath (str): Path to 3fmstream.txt
@@ -64,7 +76,6 @@ def update_mpd_file(filepath, new_mpd):
         bool: True if successful, False otherwise
     """
     try:
-        timestamp = datetime.now().isoformat()
         content = f"{new_mpd}\n"
         
         with open(filepath, 'w') as f:
@@ -84,7 +95,7 @@ def main():
     filepath = '3fmstream.txt'
     
     print("=" * 60)
-    print("3FM Stream Scraper - TEST VERSION")
+    print("3FM Stream Scraper - TEST VERSION (with Selenium)")
     print(f"Time: {datetime.now().isoformat()}")
     print("=" * 60)
     
