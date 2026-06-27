@@ -1,30 +1,34 @@
 """
-3FM Stream Scraper - Test Version
-Scrapes .mpd stream URL by clicking play button and monitoring page source
+3FM Stream Scraper - Network Request Capture Version
+Scrapes .mpd stream URL by monitoring page requests after play button click
 """
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-import re
+from selenium.webdriver.chrome.service import Service
 import time
 from datetime import datetime
+import json
 
 
 def scrape_3fm_mpd():
     """
-    Scrape the .mpd stream URL from NPO 3FM by clicking play and waiting
+    Scrape the .mpd stream URL from NPO 3FM by capturing network requests
     
     Returns:
         str: The .mpd URL if found, None otherwise
     """
     driver = None
     try:
-        print("Starting browser...")
+        print("Starting browser with DevTools Protocol...")
         options = webdriver.ChromeOptions()
+        options.add_argument("--enable-network-service")
+        options.add_argument("--enable-features=NetworkService,NetworkServiceInProcess")
         
         driver = webdriver.Chrome(options=options)
+        
+        # Enable Chrome DevTools Protocol to capture requests
+        driver.execute_cdp_cmd('Network.enable', {})
         
         print("Loading NPO 3FM page...")
         driver.get('https://www.npo3fm.nl/live')
@@ -35,66 +39,67 @@ def scrape_3fm_mpd():
         # Try to find and click the play button
         try:
             print("Looking for play button...")
-            # Try multiple selectors for play button
             play_button_selectors = [
                 "button[aria-label*='Play']",
                 "button[aria-label*='play']",
                 ".play-button",
                 "[class*='play']",
                 "button[class*='Play']",
+                "button",
             ]
             
-            play_button = None
             for selector in play_button_selectors:
                 try:
                     elements = driver.find_elements(By.CSS_SELECTOR, selector)
                     if elements:
-                        play_button = elements[0]
-                        print(f"✓ Found play button with selector: {selector}")
-                        play_button.click()
-                        print("✓ Clicked play button")
+                        # Click the first button that looks like a play button
+                        for elem in elements:
+                            try:
+                                elem.click()
+                                print("✓ Clicked play button")
+                                break
+                            except:
+                                continue
                         break
                 except:
                     continue
             
-            if not play_button:
-                print("⚠ Could not find play button, continuing anyway...")
-        
         except Exception as e:
             print(f"⚠ Error clicking play button: {e}")
         
-        print("Waiting for stream to load (10 seconds)...")
-        time.sleep(10)
+        print("Waiting for stream to load (20 seconds)...")
         
-        # Get page source after stream loads
-        page_source = driver.page_source
+        # Monitor network requests for .mpd files
+        mpd_url = None
+        start_time = time.time()
         
-        # Search for .mpd or .m3u8 URLs in the page source
-        mpd_patterns = [
-            r'https?://[^\s"\'<>]+\.mpd(?:["\'\s<>]|$)',
-            r'https?://[^\s"\'<>]+\.m3u8(?:["\'\s<>]|$)',
-        ]
+        while time.time() - start_time < 20:
+            try:
+                # Get all network events
+                logs = driver.execute_cdp_cmd('Network.getAllCookies', {})
+            except:
+                pass
+            
+            # Also check page source periodically for the URL
+            page_source = driver.page_source
+            
+            # Look for stream.mpd in various formats
+            if 'stream.mpd' in page_source:
+                # Extract the full URL
+                import re
+                pattern = r'https?://[^\s"\'<>]+stream\.mpd[^\s"\'<>]*'
+                matches = re.findall(pattern, page_source)
+                if matches:
+                    mpd_url = matches[0]
+                    print(f"✓ Found stream URL: {mpd_url}")
+                    break
+            
+            time.sleep(1)
         
-        print("Searching for stream URL...")
-        for pattern in mpd_patterns:
-            matches = re.findall(pattern, page_source)
-            if matches:
-                # Clean up the URL (remove trailing quotes/spaces)
-                stream_url = matches[0].rstrip('\'" ')
-                print(f"✓ Found stream URL: {stream_url}")
-                return stream_url
+        if mpd_url:
+            return mpd_url
         
-        print("✗ No .mpd or .m3u8 URL found in page source")
-        
-        # Try alternative: search in JavaScript code
-        print("Searching in page HTML for manifest URLs...")
-        manifest_pattern = r'(?:src|url|href)["\']?\s*:\s*["\']?(https?://[^\s"\'<>]+\.(?:mpd|m3u8))'
-        matches = re.findall(manifest_pattern, page_source)
-        if matches:
-            stream_url = matches[0]
-            print(f"✓ Found stream URL in HTML: {stream_url}")
-            return stream_url
-        
+        print("✗ Could not find stream.mpd URL")
         return None
         
     except Exception as e:
@@ -139,7 +144,7 @@ def main():
     filepath = '3fmstream.txt'
     
     print("=" * 60)
-    print("3FM Stream Scraper - Play Button Version")
+    print("3FM Stream Scraper - Network Capture Version")
     print(f"Time: {datetime.now().isoformat()}")
     print("=" * 60)
     
