@@ -1,9 +1,12 @@
 """
-3FM Stream Scraper - Test Version with Network Monitoring
-Scrapes .mpd stream URL from NPO 3FM by monitoring network requests
+3FM Stream Scraper - Test Version
+Scrapes .mpd stream URL by clicking play button and monitoring page source
 """
 
-from seleniumwire import webdriver
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import re
 import time
 from datetime import datetime
@@ -11,48 +14,86 @@ from datetime import datetime
 
 def scrape_3fm_mpd():
     """
-    Scrape the .mpd stream URL from NPO 3FM by monitoring network requests
+    Scrape the .mpd stream URL from NPO 3FM by clicking play and waiting
     
     Returns:
         str: The .mpd URL if found, None otherwise
     """
     driver = None
     try:
-        print("Starting browser with network monitoring...")
+        print("Starting browser...")
         options = webdriver.ChromeOptions()
-        options.add_argument('--start-maximized')
         
         driver = webdriver.Chrome(options=options)
         
         print("Loading NPO 3FM page...")
         driver.get('https://www.npo3fm.nl/live')
         
-        print("Waiting for network requests (15 seconds)...")
-        time.sleep(15)
+        print("Waiting for page to load...")
+        time.sleep(3)
         
-        # Monitor network requests for .mpd or .m3u8 files
-        print("Searching through network requests...")
-        mpd_url = None
-        
-        for request in driver.requests:
-            url = request.url
+        # Try to find and click the play button
+        try:
+            print("Looking for play button...")
+            # Try multiple selectors for play button
+            play_button_selectors = [
+                "button[aria-label*='Play']",
+                "button[aria-label*='play']",
+                ".play-button",
+                "[class*='play']",
+                "button[class*='Play']",
+            ]
             
-            # Look for .mpd or .m3u8 in the request URL
-            if '.mpd' in url or '.m3u8' in url:
-                print(f"✓ Found stream URL in network requests: {url}")
-                mpd_url = url
-                break
+            play_button = None
+            for selector in play_button_selectors:
+                try:
+                    elements = driver.find_elements(By.CSS_SELECTOR, selector)
+                    if elements:
+                        play_button = elements[0]
+                        print(f"✓ Found play button with selector: {selector}")
+                        play_button.click()
+                        print("✓ Clicked play button")
+                        break
+                except:
+                    continue
+            
+            if not play_button:
+                print("⚠ Could not find play button, continuing anyway...")
         
-        if mpd_url:
-            return mpd_url
+        except Exception as e:
+            print(f"⚠ Error clicking play button: {e}")
         
-        print("✗ No .mpd or .m3u8 URL found in network requests")
-        print(f"Total requests captured: {len(driver.requests)}")
+        print("Waiting for stream to load (10 seconds)...")
+        time.sleep(10)
         
-        # Debug: Show some of the requests
-        print("\nSample of captured requests:")
-        for i, request in enumerate(driver.requests[:10]):
-            print(f"  {i+1}. {request.url[:100]}")
+        # Get page source after stream loads
+        page_source = driver.page_source
+        
+        # Search for .mpd or .m3u8 URLs in the page source
+        mpd_patterns = [
+            r'https?://[^\s"\'<>]+\.mpd(?:["\'\s<>]|$)',
+            r'https?://[^\s"\'<>]+\.m3u8(?:["\'\s<>]|$)',
+        ]
+        
+        print("Searching for stream URL...")
+        for pattern in mpd_patterns:
+            matches = re.findall(pattern, page_source)
+            if matches:
+                # Clean up the URL (remove trailing quotes/spaces)
+                stream_url = matches[0].rstrip('\'" ')
+                print(f"✓ Found stream URL: {stream_url}")
+                return stream_url
+        
+        print("✗ No .mpd or .m3u8 URL found in page source")
+        
+        # Try alternative: search in JavaScript code
+        print("Searching in page HTML for manifest URLs...")
+        manifest_pattern = r'(?:src|url|href)["\']?\s*:\s*["\']?(https?://[^\s"\'<>]+\.(?:mpd|m3u8))'
+        matches = re.findall(manifest_pattern, page_source)
+        if matches:
+            stream_url = matches[0]
+            print(f"✓ Found stream URL in HTML: {stream_url}")
+            return stream_url
         
         return None
         
@@ -98,7 +139,7 @@ def main():
     filepath = '3fmstream.txt'
     
     print("=" * 60)
-    print("3FM Stream Scraper - Network Monitoring Version")
+    print("3FM Stream Scraper - Play Button Version")
     print(f"Time: {datetime.now().isoformat()}")
     print("=" * 60)
     
